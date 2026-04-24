@@ -1,3 +1,23 @@
+// Auth elements
+const authContainer = document.getElementById("auth-container");
+const chatApp = document.getElementById("chat-app");
+const loginUsernameInput = document.getElementById("login-username");
+const loginPasswordInput = document.getElementById("login-password");
+const loginBtn = document.getElementById("login-btn");
+const loginError = document.getElementById("login-error");
+const registerToggleBtn = document.getElementById("register-toggle-btn");
+
+const registerForm = document.getElementById("register-form");
+const registerUsernameInput = document.getElementById("register-username");
+const registerPasswordInput = document.getElementById("register-password");
+const registerPassword2Input = document.getElementById("register-password2");
+const registerBtn = document.getElementById("register-btn");
+const registerError = document.getElementById("register-error");
+const loginToggleBtn = document.getElementById("login-toggle-btn");
+
+const logoutBtn = document.getElementById("logout-btn");
+
+// Chat elements
 const chat = document.getElementById("chat");
 const form = document.getElementById("composer");
 const textarea = document.getElementById("message");
@@ -9,6 +29,130 @@ const timerEl = document.getElementById("timer");
 let timerId = null;
 let startTime = null;
 let currentAudio = null;
+let sessionToken = localStorage.getItem("session_token") || null;
+
+// ============= AUTH FUNCTIONS =============
+
+function showLoginForm() {
+  registerForm.style.display = "none";
+  loginError.textContent = "";
+}
+
+function showRegisterForm() {
+  registerForm.style.display = "block";
+  loginError.textContent = "";
+  registerError.textContent = "";
+}
+
+async function handleLogin() {
+  const username = loginUsernameInput.value.trim();
+  const password = loginPasswordInput.value.trim();
+
+  if (!username || !password) {
+    loginError.textContent = "Vyplň používateľa a heslo.";
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      loginError.textContent = data.error || "Chyba pri prihlásení.";
+      return;
+    }
+
+    // Save session token
+    sessionToken = data.session_token;
+    localStorage.setItem("session_token", sessionToken);
+
+    // Load chat history
+    await loadChatHistory();
+
+    // Show chat app
+    authContainer.classList.remove("active");
+    chatApp.style.display = "block";
+  } catch (err) {
+    loginError.textContent = `Chyba: ${err.message}`;
+  }
+}
+
+async function handleRegister() {
+  const username = registerUsernameInput.value.trim();
+  const password = registerPasswordInput.value.trim();
+  const password2 = registerPassword2Input.value.trim();
+
+  if (!username || !password || !password2) {
+    registerError.textContent = "Vyplň všetky polia.";
+    return;
+  }
+
+  if (password !== password2) {
+    registerError.textContent = "Heslá sa nezhodujú.";
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      registerError.textContent = data.error || "Chyba pri registrácii.";
+      return;
+    }
+
+    registerError.textContent = ""; // Clear error
+    loginUsernameInput.value = username;
+    loginPasswordInput.value = password;
+    showLoginForm();
+    loginError.textContent = "Registrácia úspešná! Prihlás sa.";
+  } catch (err) {
+    registerError.textContent = `Chyba: ${err.message}`;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetch("/api/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_token: sessionToken }),
+    });
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+
+  // Clear session
+  sessionToken = null;
+  localStorage.removeItem("session_token");
+
+  // Reset forms
+  loginUsernameInput.value = "";
+  loginPasswordInput.value = "";
+  registerUsernameInput.value = "";
+  registerPasswordInput.value = "";
+  registerPassword2Input.value = "";
+  loginError.textContent = "";
+  registerError.textContent = "";
+
+  // Show auth
+  authContainer.classList.add("active");
+  chatApp.style.display = "none";
+  chat.innerHTML = "";
+  showLoginForm();
+}
+
+// ============= CHAT FUNCTIONS =============
 
 function addBubble(text, type) {
   const bubble = document.createElement("div");
@@ -90,10 +234,17 @@ form.addEventListener("submit", async (event) => {
   startTimer();
 
   try {
+    if (!sessionToken) {
+      throw new Error("Nie si prihlásený. Prosím prihláš sa.");
+    }
+    
     const response = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ 
+        session_token: sessionToken,
+        message 
+      }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -118,5 +269,57 @@ form.addEventListener("submit", async (event) => {
     form.querySelector("button").disabled = false;
     textarea.focus();
   }
-   
 });
+
+// ============= HISTORY FUNCTIONS =============
+
+async function loadChatHistory() {
+  if (!sessionToken) return;
+
+  try {
+    const response = await fetch(
+      `/api/history?session_token=${encodeURIComponent(sessionToken)}`
+    );
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.warn("Failed to load history:", data.error);
+      return;
+    }
+
+    // Clear existing chat
+    chat.innerHTML = "";
+
+    // Load messages
+    if (data.messages && data.messages.length > 0) {
+      data.messages.forEach((msg) => {
+        addBubble(msg.user_message, "user");
+        addBubble(msg.bot_reply, "bot");
+      });
+    }
+  } catch (err) {
+    console.error("Error loading history:", err);
+  }
+}
+
+// ============= EVENT LISTENERS =============
+
+registerToggleBtn.addEventListener("click", showRegisterForm);
+loginToggleBtn.addEventListener("click", showLoginForm);
+loginBtn.addEventListener("click", handleLogin);
+registerBtn.addEventListener("click", handleRegister);
+logoutBtn.addEventListener("click", handleLogout);
+
+// Login on Enter
+loginPasswordInput.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") handleLogin();
+});
+registerPassword2Input.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") handleRegister();
+});
+
+// Check if already logged in
+if (sessionToken) {
+  authContainer.classList.remove("active");
+  chatApp.style.display = "block";
+}
