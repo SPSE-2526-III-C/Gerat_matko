@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local AI Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <style>
+    .bubble.user {
+      background: #ffe28a;
+    }
+  </style>
+  <body>
+    <main class="app">
+      <header class="app__header">
+        
+        <div class="status" id="status">Pripravený</div>
+      </header>
+
+      <section class="chat" id="chat"></section>
+
+      <section class="progress">
+        <div class="progress__bar" id="progress-bar"></div>
+        <div class="progress__meta">
+          <span id="progress-text">Čakám na vstup…</span>
+          <span id="timer">0.0 s</span>
+        </div>
+      </section>
+
+      <form class="composer" id="composer">
+        <textarea
+          id="message"
+          placeholder="Napíš správu..."
+          rows="2"
+          required
+        ></textarea>
+        <button type="submit">Odoslať</button>
+      </form>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
