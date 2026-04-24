@@ -1,4 +1,4 @@
-# Local AI model runner (no admin)
+# Local AI model runner 
 
 This folder gives you a **free, offline, text‑only** model that you can download and run locally on Windows without admin rights.
 
