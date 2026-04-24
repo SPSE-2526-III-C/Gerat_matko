@@ -147,14 +147,27 @@ def login_user(username: str, password: str) -> dict:
         # Update last login
         cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
         
-        # Create new session token
-        session_token = str(uuid.uuid4())
+        # Check if user has an active session (not ended)
         cursor.execute("""
-            INSERT INTO chat_sessions (user_id, session_token)
-            VALUES (?, ?)
-        """, (user_id, session_token))
+            SELECT id, session_token FROM chat_sessions
+            WHERE user_id = ? AND session_end IS NULL
+            ORDER BY session_start DESC
+            LIMIT 1
+        """, (user_id,))
         
-        session_id = cursor.lastrowid
+        existing_session = cursor.fetchone()
+        
+        if existing_session:
+            # Reuse existing session
+            session_id, session_token = existing_session
+        else:
+            # Create new session token
+            session_token = str(uuid.uuid4())
+            cursor.execute("""
+                INSERT INTO chat_sessions (user_id, session_token)
+                VALUES (?, ?)
+            """, (user_id, session_token))
+            session_id = cursor.lastrowid
         
         # Log successful login
         cursor.execute("""
@@ -383,6 +396,42 @@ def get_session_history(session_id: int) -> list[dict]:
         ]
     except Exception as e:
         print(f"Error getting session history: {e}")
+        return []
+
+
+def get_user_history(user_id: int) -> list[dict]:
+    """Retrieve all messages across all sessions for a specific user."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT cm.id, cm.user_message, cm.bot_reply, cm.is_blocked, cm.elapsed_time, cm.timestamp
+            FROM chat_messages cm
+            JOIN chat_sessions cs ON cm.session_id = cs.id
+            WHERE cs.user_id = ?
+            ORDER BY cm.timestamp ASC, cm.id ASC
+            """,
+            (user_id,),
+        )
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                "id": row[0],
+                "user_message": row[1],
+                "bot_reply": row[2],
+                "is_blocked": bool(row[3]),
+                "elapsed_time": row[4],
+                "timestamp": row[5],
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"Error getting user history: {e}")
         return []
 
 

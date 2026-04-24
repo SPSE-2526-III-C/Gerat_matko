@@ -15,7 +15,7 @@ from safety import filter_model_reply, filter_user_message
 from text_speach import synthesize_mp3_bytes
 from db import (
     init_db, create_session, save_message, save_metadata, end_session, 
-    get_user_sessions, get_session_history, verify_session, login_user, 
+    get_user_sessions, get_session_history, get_user_history, verify_session, login_user, 
     register_user, create_session_for_user, get_audit_log
 )
 MODEL_URL = (
@@ -299,7 +299,7 @@ def api_generate() -> Any:
 
 @app.route("/api/history", methods=["GET"])
 def api_history() -> Any:
-    """Retrieve chat history for the current session."""
+    """Retrieve chat history for the current user across all sessions."""
     session_token = request.args.get("session_token", "").strip()
     
     if not session_token:
@@ -310,7 +310,7 @@ def api_history() -> Any:
         if not session:
             return jsonify({"error": "Invalid session."}), 400
         
-        history = get_session_history(session["session_id"])
+        history = get_user_history(session["user_id"])
         return jsonify({
             "session_id": session["session_id"],
             "username": session["username"],

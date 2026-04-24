@@ -274,13 +274,19 @@ form.addEventListener("submit", async (event) => {
 // ============= HISTORY FUNCTIONS =============
 
 async function loadChatHistory() {
-  if (!sessionToken) return;
+  if (!sessionToken) {
+    console.warn("No session token available");
+    return;
+  }
 
   try {
+    console.log("Loading chat history with token:", sessionToken);
     const response = await fetch(
       `/api/history?session_token=${encodeURIComponent(sessionToken)}`
     );
     const data = await response.json();
+
+    console.log("History response:", data);
 
     if (!response.ok) {
       console.warn("Failed to load history:", data.error);
@@ -292,10 +298,13 @@ async function loadChatHistory() {
 
     // Load messages
     if (data.messages && data.messages.length > 0) {
+      console.log("Loading", data.messages.length, "messages");
       data.messages.forEach((msg) => {
         addBubble(msg.user_message, "user");
         addBubble(msg.bot_reply, "bot");
       });
+    } else {
+      console.log("No messages in history");
     }
   } catch (err) {
     console.error("Error loading history:", err);
@@ -322,4 +331,5 @@ registerPassword2Input.addEventListener("keypress", (e) => {
 if (sessionToken) {
   authContainer.classList.remove("active");
   chatApp.style.display = "block";
+  loadChatHistory();
 }
