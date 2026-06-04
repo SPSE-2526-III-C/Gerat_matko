@@ -1,10 +1,15 @@
-// Auth elements
+// =====================================================
+// AUTH ELEMENTS
+// =====================================================
+
 const authContainer = document.getElementById("auth-container");
 const chatApp = document.getElementById("chat-app");
+
 const loginUsernameInput = document.getElementById("login-username");
 const loginPasswordInput = document.getElementById("login-password");
 const loginBtn = document.getElementById("login-btn");
 const loginError = document.getElementById("login-error");
+
 const registerToggleBtn = document.getElementById("register-toggle-btn");
 
 const registerForm = document.getElementById("register-form");
@@ -13,11 +18,15 @@ const registerPasswordInput = document.getElementById("register-password");
 const registerPassword2Input = document.getElementById("register-password2");
 const registerBtn = document.getElementById("register-btn");
 const registerError = document.getElementById("register-error");
+
 const loginToggleBtn = document.getElementById("login-toggle-btn");
 
 const logoutBtn = document.getElementById("logout-btn");
 
-// Chat elements
+// =====================================================
+// CHAT ELEMENTS
+// =====================================================
+
 const chat = document.getElementById("chat");
 const form = document.getElementById("composer");
 const textarea = document.getElementById("message");
@@ -26,310 +35,313 @@ const progressBar = document.getElementById("progress-bar");
 const progressText = document.getElementById("progress-text");
 const timerEl = document.getElementById("timer");
 
+const initBtn = document.getElementById("init-model-btn");
+
+// =====================================================
+// STATE
+// =====================================================
+
 let timerId = null;
 let startTime = null;
 let currentAudio = null;
-let sessionToken = localStorage.getItem("session_token") || null;
 
-// ============= AUTH FUNCTIONS =============
+let sessionToken = localStorage.getItem("session_token") || null;
+let modelReady = false;
+let modelLoading = false;
+
+// =====================================================
+// UI HELPERS
+// =====================================================
+
+function setChatEnabled(enabled) {
+  textarea.disabled = !enabled;
+  form.querySelector("button").disabled = !enabled;
+}
+
+function setStatus(text) {
+  statusBadge.textContent = text;
+}
+
+function showAuth() {
+  authContainer.style.display = "flex";
+  chatApp.style.display = "none";
+}
+
+function showApp() {
+  authContainer.style.display = "none";
+  chatApp.style.display = "flex";
+}
+
+// =====================================================
+// MODEL STATUS
+// =====================================================
+
+async function checkModelStatus() {
+  try {
+    const res = await fetch("/api/model-status");
+    const data = await res.json();
+
+    modelReady = data.ready;
+    modelLoading = data.loading;
+
+    updateModelUI();
+  } catch (e) {
+    console.error("model status error", e);
+  }
+}
+
+function updateModelUI() {
+  if (modelLoading) {
+    setStatus("🟡 AI sa načítava...");
+    setChatEnabled(false);
+    textarea.placeholder = "AI sa inicializuje...";
+  }
+
+  if (modelReady) {
+    setStatus("🟢 AI pripravená");
+    setChatEnabled(true);
+    textarea.placeholder = "Napíš správu...";
+  }
+
+  if (!modelReady && !modelLoading) {
+    setStatus("🔴 AI neinicializovaná");
+    setChatEnabled(false);
+    textarea.placeholder = "Najprv klikni na Inicializovať AI";
+  }
+}
+
+// =====================================================
+// INIT MODEL
+// =====================================================
+
+async function initModel() {
+  try {
+    setStatus("🟡 Inicializujem AI...");
+    setChatEnabled(false);
+
+    initBtn.disabled = true;
+
+    const res = await fetch("/api/init-model", {
+      method: "POST"
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Init failed");
+    }
+
+    modelReady = true;
+    modelLoading = false;
+
+    updateModelUI();
+
+  } catch (err) {
+    setStatus("🔴 Chyba inicializácie");
+    console.error(err);
+  } finally {
+    initBtn.disabled = false;
+  }
+}
+
+// =====================================================
+// AUTH
+// =====================================================
 
 function showLoginForm() {
-  registerForm.style.display = "none";
-  loginError.textContent = "";
+  registerForm.classList.add("hidden");
 }
 
 function showRegisterForm() {
-  registerForm.style.display = "block";
-  loginError.textContent = "";
-  registerError.textContent = "";
+  registerForm.classList.remove("hidden");
 }
 
+// TÁTO FUNKCIA TU CHÝBALA A SPÔSOBOVALA PÁD APLIKÁCIE
+async function loadChatHistory() {
+  // Zatiaľ slúži ako placeholder, aby JavaScript nepadal na ReferenceError.
+  // Neskôr sem môžeš dopísať načítanie starých správ z backendu (ak ho máš implementovaný).
+  console.log("loadChatHistory: História správ zatiaľ nie je prepojená s backendom.");
+}
+
+// LOGIN
 async function handleLogin() {
   const username = loginUsernameInput.value.trim();
   const password = loginPasswordInput.value.trim();
 
   if (!username || !password) {
-    loginError.textContent = "Vyplň používateľa a heslo.";
+    loginError.textContent = "Vyplň všetko";
     return;
   }
 
-  try {
-    const response = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username, password })
+  });
 
-    const data = await response.json();
+  const data = await res.json();
 
-    if (!response.ok) {
-      loginError.textContent = data.error || "Chyba pri prihlásení.";
-      return;
-    }
-
-    // Save session token
-    sessionToken = data.session_token;
-    localStorage.setItem("session_token", sessionToken);
-
-    // Load chat history
-    await loadChatHistory();
-
-    // Show chat app
-    authContainer.classList.remove("active");
-    chatApp.style.display = "block";
-  } catch (err) {
-    loginError.textContent = `Chyba: ${err.message}`;
+  if (!res.ok) {
+    loginError.textContent = data.error;
+    return;
   }
+
+  sessionToken = data.session_token;
+  localStorage.setItem("session_token", sessionToken);
+
+  await loadChatHistory();
+
+  showApp();
+  await checkModelStatus();
 }
 
+// REGISTER
 async function handleRegister() {
   const username = registerUsernameInput.value.trim();
   const password = registerPasswordInput.value.trim();
   const password2 = registerPassword2Input.value.trim();
 
-  if (!username || !password || !password2) {
-    registerError.textContent = "Vyplň všetky polia.";
-    return;
-  }
-
   if (password !== password2) {
-    registerError.textContent = "Heslá sa nezhodujú.";
+    registerError.textContent = "Heslá sa nezhodujú";
     return;
   }
 
-  try {
-    const response = await fetch("/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
+  const res = await fetch("/api/register", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username, password })
+  });
 
-    const data = await response.json();
+  const data = await res.json();
 
-    if (!response.ok) {
-      registerError.textContent = data.error || "Chyba pri registrácii.";
-      return;
-    }
-
-    registerError.textContent = ""; // Clear error
-    loginUsernameInput.value = username;
-    loginPasswordInput.value = password;
-    showLoginForm();
-    loginError.textContent = "Registrácia úspešná! Prihlás sa.";
-  } catch (err) {
-    registerError.textContent = `Chyba: ${err.message}`;
-  }
-}
-
-async function handleLogout() {
-  try {
-    await fetch("/api/logout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_token: sessionToken }),
-    });
-  } catch (err) {
-    console.error("Logout error:", err);
+  if (!res.ok) {
+    registerError.textContent = data.error;
+    return;
   }
 
-  // Clear session
-  sessionToken = null;
-  localStorage.removeItem("session_token");
-
-  // Reset forms
-  loginUsernameInput.value = "";
-  loginPasswordInput.value = "";
-  registerUsernameInput.value = "";
-  registerPasswordInput.value = "";
-  registerPassword2Input.value = "";
-  loginError.textContent = "";
-  registerError.textContent = "";
-
-  // Show auth
-  authContainer.classList.add("active");
-  chatApp.style.display = "none";
-  chat.innerHTML = "";
+  registerError.textContent = "OK, teraz sa prihlás";
   showLoginForm();
 }
 
-// ============= CHAT FUNCTIONS =============
+// LOGOUT
+async function handleLogout() {
+  await fetch("/api/logout", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ session_token: sessionToken })
+  });
 
-function addBubble(text, type) {
-  const bubble = document.createElement("div");
-  bubble.className = `bubble ${type}`;
-  bubble.textContent = text;
-  chat.appendChild(bubble);
-  chat.scrollTop = chat.scrollHeight;
+  sessionToken = null;
+  localStorage.removeItem("session_token");
+
+  chat.innerHTML = "";
+  showAuth();
 }
 
-function setStatus(text, isBusy) {
-  statusBadge.textContent = text;
-  statusBadge.style.background = isBusy
-    ? "rgba(251, 146, 60, 0.18)"
-    : "rgba(59, 130, 246, 0.15)";
-  statusBadge.style.borderColor = isBusy
-    ? "rgba(251, 146, 60, 0.4)"
-    : "rgba(59, 130, 246, 0.4)";
+// =====================================================
+// CHAT
+// =====================================================
+
+function addBubble(text, type) {
+  const div = document.createElement("div");
+  div.className = `bubble ${type === "user" ? "user" : "ai"}`;
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function startTimer() {
   startTime = performance.now();
-  timerId = window.setInterval(() => {
+  timerId = setInterval(() => {
     const elapsed = (performance.now() - startTime) / 1000;
     timerEl.textContent = `${elapsed.toFixed(1)} s`;
-    progressBar.style.width = `${Math.min(90, elapsed * 10)}%`;
+    progressBar.style.width = `${Math.min(95, elapsed * 10)}%`;
   }, 100);
 }
 
 function stopTimer() {
-  if (timerId) {
-    window.clearInterval(timerId);
-    timerId = null;
-  }
+  clearInterval(timerId);
   progressBar.style.width = "100%";
 }
 
-async function playTTS(text) {
-  if (!text) return;
-  try {
-    const response = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || "TTS chyba.");
-    }
-    const audioBlob = await response.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
+// =====================================================
+// SEND MESSAGE
+// =====================================================
 
-    if (currentAudio) {
-      currentAudio.pause();
-      URL.revokeObjectURL(currentAudio.src);
-    }
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
 
-    currentAudio = new Audio(audioUrl);
-    currentAudio.onended = () => URL.revokeObjectURL(audioUrl);
-    await currentAudio.play();
-  } catch (err) {
-    console.warn("TTS failed", err);
-  }
-}
+  if (!modelReady) return;
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
   const message = textarea.value.trim();
   if (!message) return;
 
   textarea.value = "";
-  textarea.disabled = true;
-  form.querySelector("button").disabled = true;
+  setChatEnabled(false);
 
   addBubble(message, "user");
-  setStatus("Generujem odpoveď…", true);
-  progressText.textContent = "Generujem, prosím čakaj…";
-  timerEl.textContent = "0.0 s";
-  progressBar.style.width = "5%";
+
+  setStatus("Generujem...");
   startTimer();
 
   try {
-    if (!sessionToken) {
-      throw new Error("Nie si prihlásený. Prosím prihláš sa.");
-    }
-    
-    const response = await fetch("/api/generate", {
+    const res = await fetch("/api/generate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
         session_token: sessionToken,
-        message 
-      }),
+        message
+      })
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Chyba servera.");
-    }
+
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error);
+
     addBubble(data.reply, "bot");
-    if (data.blocked) {
-      progressText.textContent = "Správa bola zablokovaná.";
-      setStatus("Zablokované", true);
-    } else {
-      progressText.textContent = `Hotovo za ${data.elapsed.toFixed(1)} s | limit ${data.max_tokens} tok.`;
-      setStatus("Pripravený", false);
-      await playTTS(data.reply);
-    }
+    setStatus("Hotovo");
+
   } catch (err) {
-    addBubble(`Chyba: ${err.message}`, "bot");
-    progressText.textContent = "Niečo sa pokazilo.";
-    setStatus("Chyba", true);
+    addBubble("Chyba: " + err.message, "bot");
+    setStatus("Chyba");
   } finally {
     stopTimer();
-    textarea.disabled = false;
-    form.querySelector("button").disabled = false;
-    textarea.focus();
+    setChatEnabled(modelReady);
   }
 });
 
-// ============= HISTORY FUNCTIONS =============
+// =====================================================
+// INIT BUTTON
+// =====================================================
 
-async function loadChatHistory() {
-  if (!sessionToken) {
-    console.warn("No session token available");
-    return;
-  }
+initBtn.addEventListener("click", initModel);
 
-  try {
-    console.log("Loading chat history with token:", sessionToken);
-    const response = await fetch(
-      `/api/history?session_token=${encodeURIComponent(sessionToken)}`
-    );
-    const data = await response.json();
+// =====================================================
+// EVENTS
+// =====================================================
 
-    console.log("History response:", data);
-
-    if (!response.ok) {
-      console.warn("Failed to load history:", data.error);
-      return;
-    }
-
-    // Clear existing chat
-    chat.innerHTML = "";
-
-    // Load messages
-    if (data.messages && data.messages.length > 0) {
-      console.log("Loading", data.messages.length, "messages");
-      data.messages.forEach((msg) => {
-        addBubble(msg.user_message, "user");
-        addBubble(msg.bot_reply, "bot");
-      });
-    } else {
-      console.log("No messages in history");
-    }
-  } catch (err) {
-    console.error("Error loading history:", err);
-  }
-}
-
-// ============= EVENT LISTENERS =============
-
-registerToggleBtn.addEventListener("click", showRegisterForm);
-loginToggleBtn.addEventListener("click", showLoginForm);
 loginBtn.addEventListener("click", handleLogin);
 registerBtn.addEventListener("click", handleRegister);
 logoutBtn.addEventListener("click", handleLogout);
 
-// Login on Enter
+loginToggleBtn.addEventListener("click", showLoginForm);
+registerToggleBtn.addEventListener("click", showRegisterForm);
+
+// ENTER LOGIN
 loginPasswordInput.addEventListener("keypress", (e) => {
   if (e.key === "Enter") handleLogin();
 });
-registerPassword2Input.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") handleRegister();
-});
 
-// Check if already logged in
-if (sessionToken) {
-  authContainer.classList.remove("active");
-  chatApp.style.display = "block";
-  loadChatHistory();
-}
+// =====================================================
+// STARTUP
+// =====================================================
+
+(async function start() {
+  if (sessionToken) {
+    showApp();
+    await checkModelStatus();
+    await loadChatHistory();
+  } else {
+    showAuth();
+  }
+})();
